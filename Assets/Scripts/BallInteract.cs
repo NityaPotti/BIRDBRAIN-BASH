@@ -4,6 +4,10 @@ using UnityEngine.InputSystem;
 
 public class BallInteract : MonoBehaviour
 {
+    [Header("Game Manager")]
+    public GameManager gameManager;
+    public bool onLeft;
+
     [Header("Ball Interaction Settings")]
     public float upwardForce = 500f;
     public float interactionRadius = 5f;
@@ -176,7 +180,7 @@ public class BallInteract : MonoBehaviour
     private void BumpBall(Rigidbody ballRb)
     {
         // Set bump to location to front middle of whatever side of the court is bumping
-        bumpToLocation = new Vector3(1f, 0f, 0f);
+        bumpToLocation = new Vector3(2f, 0f, 0f);
         if (ballRb.transform.position.x < 0)
         {
             bumpToLocation *= -1;
@@ -184,6 +188,11 @@ public class BallInteract : MonoBehaviour
         
         // Set the ball's intial velocity
         SetBallInitVelocity(ballRb, bumpToLocation, 5.0f);
+
+        // Update game manager fields
+        gameManager.gameState = GameManager.GameState.Bumped;
+        gameManager.lastHit = gameObject;
+        gameManager.leftAttack = onLeft;
     }
 
     private void SpikeBall()
@@ -225,6 +234,10 @@ public class BallInteract : MonoBehaviour
 
                 // Set the ball's initial velocity
                 SetBallInitVelocity(ballRb, spikeToLocation, -1.0f);
+
+                // Update game manager fields
+                gameManager.gameState = GameManager.GameState.Spiked;
+                gameManager.lastHit = gameObject;
             }
             else
             {
@@ -266,6 +279,10 @@ public class BallInteract : MonoBehaviour
 
                 // Set the ball's initial velocity
                 SetBallInitVelocity(ballRb, setToLocation, 6.0f);
+
+                // Update game manager fields
+                gameManager.gameState = GameManager.GameState.Set;
+                gameManager.lastHit = gameObject;
             }
             else
             {

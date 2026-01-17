@@ -3,6 +3,10 @@ using System;
 
 public class AIBehavior : MonoBehaviour
 {
+    [Header("Game Manager")]
+    public GameManager gameManager;
+    public bool onLeft;
+
     [Header("Ball Interaction Settings")]
     public float interactionRadius = 5f;
 
@@ -14,20 +18,11 @@ public class AIBehavior : MonoBehaviour
     private float directionChangeWeight = 15f; // How quickly the character can change direction
     private bool grounded = false; // If the character is touching the ground
     private GameObject ball;
-    private AIState currState;
     private Rigidbody ballRb;
     private Vector3 bumpToLocation; // Where the ball will go after bumping
     private Vector3 setToLocation; // Where the ball will go after setting
     private Vector3 spikeToLocation; // Where the ball will go after spiking
     private float spikeSpeed; // Speed of the ball when spiked
-
-    private enum AIState
-    {
-        Waiting,
-        Bumping,
-        Setting,
-        Spiking
-    }
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
@@ -42,7 +37,6 @@ public class AIBehavior : MonoBehaviour
             Debug.LogError("Ball game object was not found for AIBehavior!");
         }
 
-        currState = AIState.Waiting;
         spikeSpeed = 10f;
     }
 
@@ -57,51 +51,67 @@ public class AIBehavior : MonoBehaviour
 
     private void CheckState()
     {
-        switch (currState)
+        // If your team is setting up for an attack OR the other team has just spiked
+        if (!gameObject.Equals(gameManager.lastHit)
+            && ((gameManager.leftAttack.Equals(onLeft) && !gameManager.gameState.Equals(GameManager.GameState.Spiked)) 
+            || (!gameManager.leftAttack.Equals(onLeft) && gameManager.gameState.Equals(GameManager.GameState.Spiked))))
         {
-            case AIState.Waiting:
-                if (ball.transform.position.x * transform.position.x >= 0 && grounded)
-                {
-                    currState = AIState.Bumping;
-                }
-                break;
-            case AIState.Bumping:
-                if (IsAINearBall() && ballRb.linearVelocity.y < 0)
-                {
-                    BumpBall();
-                    currState = AIState.Setting;
-                }
-                else
-                {
-                    MoveAI();
-                }
-                break;
-            case AIState.Setting:
-                if (IsAINearBall() && ballRb.linearVelocity.y < 0)
-                {
-                    SetBall();
-                    currState = AIState.Spiking;
-                }
-                else
-                {
-                    MoveAI();
-                }
-                break;
-            case AIState.Spiking:
-                if (ballRb.linearVelocity.y < 0)
-                {
-                    if (grounded)
+            switch (gameManager.gameState)
+            {
+                case GameManager.GameState.Spiked:
+                    if (IsAINearBall() && ballRb.linearVelocity.y < 0)
                     {
-                        GetComponent<Rigidbody>().linearVelocity += new Vector3(0, jumpForce, 0);
-                        grounded = false;
+                        BumpBall();
                     }
-                    else if (IsAINearBall())
+                    else
                     {
-                        SpikeBall();
-                        currState = AIState.Waiting;
+                        MoveAI(true);
                     }
-                }
-                break;
+                    break;
+                case GameManager.GameState.Bumped:
+                    if (IsAINearBall() && ballRb.linearVelocity.y < 0)
+                    {
+                        SetBall();
+                    }
+                    else
+                    {
+                        MoveAI(true);
+                    }
+                    break;
+                case GameManager.GameState.Set:
+                    // See if the AI is underneath the ball, jump when the ball is coming down, and spike it when close
+                    Vector2 aiPos = new Vector2(transform.position.x, transform.position.z);
+                    Vector2 ballPos = new Vector2(ballRb.transform.position.x, ballRb.transform.position.z);
+
+                    if (ballRb.linearVelocity.y < 0)
+                    {
+                        if (Vector2.Distance(aiPos, ballPos) > 1f)
+                        {
+                            MoveAI(true);
+                        }
+                        else if (grounded)
+                        {
+                            GetComponent<Rigidbody>().linearVelocity += new Vector3(0, jumpForce, 0);
+                            grounded = false;
+                        }
+                        else if (IsAINearBall())
+                        {
+                            SpikeBall();
+                        }
+                    }
+                    else
+                    {
+                        if (Vector2.Distance(aiPos, ballPos) > 1f)
+                        {
+                            MoveAI(true);
+                        }
+                    }
+                    break;
+            }
+        }
+        else // Reposition for defense
+        {
+            MoveAI(false);
         }
     }
 
@@ -111,14 +121,48 @@ public class AIBehavior : MonoBehaviour
         return distance <= interactionRadius;
     }
     
-    private void MoveAI()
+    private void MoveAI(bool towardsBall)
     {
+        // Initialize target for AI
+        Vector3 target = new Vector3(5, 0, 0);
+        if (onLeft)
+        {
+            target *= -1;
+            
+            if (gameManager.leftPlayer1.Equals(gameObject))
+            {
+                target += new Vector3(0, 0, 2);
+            }
+            else
+            {
+                target -= new Vector3(0, 0, 2);
+            }
+        }
+        else
+        {
+            if (gameManager.rightPlayer1.Equals(gameObject))
+            {
+                target += new Vector3(0, 0, 2);
+            }
+            else
+            {
+                target -= new Vector3(0, 0, 2);
+            }
+        }
+
+
+        // If the AI should move towards the ball
+        if (towardsBall)
+        {
+            target = ball.transform.position;
+        }
+
         // Get the AI's rigidbody
         Rigidbody rb = GetComponent<Rigidbody>();
 
         // Get the direction the AI needs to move in
-        float dx = ball.transform.position.x - transform.position.x;
-        float dz = ball.transform.position.z - transform.position.z;
+        float dx = target.x - transform.position.x;
+        float dz = target.z - transform.position.z;
         Vector2 dir = new Vector2(dx, dz);
 
         // Update the current direction and speed of the character based on player input
@@ -145,14 +189,19 @@ public class AIBehavior : MonoBehaviour
     private void BumpBall()
     {
         // Set bump to location to front middle of whatever side of the court is bumping
-        bumpToLocation = new Vector3(1f, 0f, 0f);
-        if (ballRb.transform.position.x < 0)
+        bumpToLocation = new Vector3(2f, 0f, 0f);
+        if (onLeft)
         {
             bumpToLocation *= -1;
         }
         
         // Set the ball's intial velocity
         SetBallInitVelocity(ballRb, bumpToLocation, 5.0f);
+
+        // Update game manager fields
+        gameManager.gameState = GameManager.GameState.Bumped;
+        gameManager.lastHit = gameObject;
+        gameManager.leftAttack = onLeft;
     }
 
     private void SetBall()
@@ -162,8 +211,23 @@ public class AIBehavior : MonoBehaviour
             // Set the setting location to middle of court as default
             setToLocation = bumpToLocation;
 
+            // Randomly decide to set it elsewhere
+            float rand = UnityEngine.Random.Range(0f, 1f);
+            if (rand < 0.33f)
+            {
+                setToLocation += new Vector3(0, 0, 4);
+            }
+            else if (rand < 0.66f)
+            {
+                setToLocation -= new Vector3(0, 0, 4);
+            }
+
             // Set the ball's initial velocity
             SetBallInitVelocity(ballRb, setToLocation, 6.0f);
+
+            // Update game manager fields
+            gameManager.gameState = GameManager.GameState.Set;
+            gameManager.lastHit = gameObject;
         }
         else
         {
@@ -178,13 +242,28 @@ public class AIBehavior : MonoBehaviour
             spikeToLocation = new Vector3(8, 0, 0);
 
             // If rightside is spiking, switch to spike towards leftside
-            if (ballRb.transform.position.x > 0)
+            if (!onLeft)
             {
                 spikeToLocation *= -1;
             }
 
+            // Randomly decide to set it elsewhere
+            float rand = UnityEngine.Random.Range(0f, 1f);
+            if (rand < 0.33f)
+            {
+                spikeToLocation += new Vector3(0, 0, 4);
+            }
+            else if (rand < 0.66f)
+            {
+                spikeToLocation -= new Vector3(0, 0, 4);
+            }
+
             // Set the ball's initial velocity
             SetBallInitVelocity(ballRb, spikeToLocation, -1.0f);
+
+            // Update game manager fields
+            gameManager.gameState = GameManager.GameState.Spiked;
+            gameManager.lastHit = gameObject;
         }
         else
         {
