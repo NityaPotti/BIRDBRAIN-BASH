@@ -7,9 +7,13 @@ public class CharacterMovement : MonoBehaviour
     public float maxGroundSpeed = 1.0f; // Max speed that the character can move on the ground
     public float maxAirSpeed = 1.0f; // Max speed that the character can move in the air
     public float jumpForce = 1.0f; // Force the character uses to jump 
+    public float rotationSpeed = 10.0f; // How fast the character rotates to face movement direction
     private float directionChangeWeight = 15f; // How quickly the character can change direction
     private Rigidbody rb; // Rigid body of the character
     private bool grounded = false; // If the character is touching the ground
+    
+    [HideInInspector] public bool overrideRotation = false; // Allow other scripts to override rotation
+    [HideInInspector] public Quaternion targetRotation; // Target rotation when overridden
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
@@ -42,6 +46,19 @@ public class CharacterMovement : MonoBehaviour
             }
 
             rb.linearVelocity = new Vector3(newVelocity.x, rb.linearVelocity.y, newVelocity.y);
+            
+            // Rotate to face movement direction (unless overridden by another script)
+            if (!overrideRotation && inputDirection.magnitude > 0.1f)
+            {
+                Vector3 movementDirection = new Vector3(inputDirection.x, 0, inputDirection.y);
+                targetRotation = Quaternion.LookRotation(movementDirection);
+            }
+        }
+        
+        // Apply rotation (either from movement or override)
+        if (!overrideRotation || Vector3.Distance(transform.eulerAngles, targetRotation.eulerAngles) > 0.1f)
+        {
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.fixedDeltaTime);
         }
 
         // Check for player input for vertical movement
