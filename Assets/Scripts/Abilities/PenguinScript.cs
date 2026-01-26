@@ -4,8 +4,8 @@ using UnityEngine.InputSystem;
 public class PenguinScript : MonoBehaviour
 {
     [Header("Dash Ability")]
-    public float dashCooldown = 5.0f; // How long it takes to use the dash again
-    public float dashDuration = 1.0f; // How long the dash will last
+    public float dashCooldown = 5.0f; 
+    public float dashDuration = 1.0f;
     public float dashSpeed = 10.0f; // Forward movement speed during dash
     public float rotationSpeed = 8.0f; // How fast penguin rotates
 
@@ -14,21 +14,18 @@ public class PenguinScript : MonoBehaviour
     [HideInInspector] public bool isDashing = false;
     private bool isReturningUpright = false; // Ensure penguin returns to upright after dash
     private float dashTimer = 0.0f; // Tracker for the cooldown
-    private float cooldownTimer = 0.0f; // Tracker for the next dash
+    private float cooldownTimer = 0.0f;
     private CharacterMovement characterMovement; // Track movement from character movement script
-    private Rigidbody rb; // Rigidbody of the penguin
+    private Rigidbody rb;
 
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
-        // Get the rigidbody and the character movement components from the penguin
         rb = GetComponent<Rigidbody>();
-        characterMovement = GetComponent<CharacterMovement>(); // christofort: gets the character movement script
+        characterMovement = GetComponent<CharacterMovement>(); 
         // christofort: automatically sets canJump and canMove to True
         characterMovement.controlMovement(true,true);
     }
 
-    // Update is called once per frame
     void Update()
     {
         
@@ -68,10 +65,8 @@ public class PenguinScript : MonoBehaviour
         }
     }
 
-    // Start the dash for the penguin
     void StartDash()
     {
-        // Mark the penguin as dashing and set the dash timer
         characterMovement.controlMovement(true,false); //christofort: makes canJump false
         isDashing = true;
         dashTimer = dashDuration;
@@ -86,10 +81,8 @@ public class PenguinScript : MonoBehaviour
         }
     }
 
-    // End the dash for the penguin
     void EndDash()
     {
-        // Mark the penguin as not dashing and start the cooldown timer
         isDashing = false;
         characterMovement.controlMovement(true, true); //christofort: sets canJump back to True
         cooldownTimer = dashCooldown;

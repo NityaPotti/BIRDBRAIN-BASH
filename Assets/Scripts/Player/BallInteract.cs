@@ -5,99 +5,181 @@ using UnityEngine.InputSystem;
 public class BallInteract : MonoBehaviour
 {
     [Header("Game Manager")]
-    public GameManager gameManager; // Manager for the game logic
-    public bool onLeft; // Whether the player is on the left court or not
+    public GameManager gameManager;
+    public bool onLeft;
 
     [Header("Ball Manager")]
-    public BallManager ballManager; // Manager for the ball
-    public float interactionRadius = 5f; // How far the player can interact with the ball
-
-    private Rigidbody rb; // Rigidbody of the player
+    public BallManager ballManager;
+    public float interactionRadius = 5f;
+    
+    [Header("Input Settings")]
+    public InputActionAsset inputActionAsset;
+    
+    private Rigidbody rb;
     private InputActionMap playerActionMap;
-    private GameObject ball; // Ball in the game
-    private Rigidbody ballRb; // Rigidbody of the ball
+    private InputAction bumpAction;
+    private InputAction setAction;
+    private InputAction spikeAction;
+    private InputAction directionAction; // Which direction the player will perform an action (no plans to use this for bumping atm)
+    private Transform playerTransform;
+    private GameObject ball;
     private Vector3 bumpToLocation; // Where the ball will go after bumping
     private Vector3 setToLocation; // Where the ball will go after setting
     private Vector3 spikeToLocation; // Where the ball will go after spiking
     private Vector3 serveToLocation; // Where the ball will go after spiking
     private float spikeSpeed; // Speed of the ball when spiked
-    
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
+    private CharacterMovement serverMovement; //Christofort: Track the server's movement from character movement script
+
     void Start()
     {
-        // Assign player rigidbody and spike speed
+        serverMovement = GetComponent<CharacterMovement>(); // christofort: gets the character movement script
         rb = GetComponent<Rigidbody>();
+        playerTransform = transform;
         spikeSpeed = 10.0f;
         
-        // Get the ball and its rigid body, log errors if either are missing
         ball = GameObject.FindGameObjectWithTag("Ball");
-        if (ball != null)
+        
+        if (inputActionAsset != null)
         {
-            ballRb = ball.GetComponent<Rigidbody>();
-            if (ballRb == null)
+            playerActionMap = inputActionAsset.FindActionMap("Player");
+            if (playerActionMap != null)
             {
-                Debug.LogError("Ball rigid body was not found for BallInteract!");
+                bumpAction = playerActionMap.FindAction("Bump");
+                if (bumpAction != null)
+                {
+                    bumpAction.performed += OnInteract;
+                }
+                else
+                {
+                    Debug.LogError("Bump action not found!");
+                }
+
+                setAction = playerActionMap.FindAction("Set");
+                if (setAction == null)
+                {
+                    Debug.LogError("Set action not found!");
+                }
+
+                spikeAction = playerActionMap.FindAction("Spike");
+                if (spikeAction == null)
+                {
+                    Debug.LogError("Spike action not found!");
+                }
+
+                directionAction = playerActionMap.FindAction("Direction");
+                if (directionAction == null)
+                {
+                    Debug.LogError("Direction action not found!");
+                }
+            }
+            else
+            {
+                Debug.LogError("Player action map not found!");
             }
         }
         else
         {
-            Debug.LogError("Ball game object was not found for BallInteract!");
+            Debug.LogError("Input Action Asset not assigned!");
         }
 
-        // Make sure ball manager was assigned in inspector
         if (ballManager == null)
         {
             Debug.LogError("Ball Manager was not set in inspector for BallInteract!");
         }
     }
-    
-    // Update is called once per frame
-    void Update()
+
+    void OnEnable()
     {
-        // If the ball and its rigidbody exist, check the player state
-        if (ball != null && ballRb != null)
+        if (playerActionMap != null)
         {
-            CheckState();
-        } 
+            playerActionMap.Enable();
+        }
     }
 
-    // Check the state of player for legal input
+    void OnDisable()
+    {
+        if (playerActionMap != null)
+        {
+            playerActionMap.Disable();
+        }
+    }
+
+    void OnDestroy()
+    {
+        if (bumpAction != null)
+        {
+            bumpAction.performed -= OnInteract;
+        }
+    }
+
+    private void OnInteract(InputAction.CallbackContext context)
+    {
+        if (ball == null)
+        {
+            Debug.LogWarning("Ball is null!");
+            return;
+        }
+        bool nearBall = IsPlayerNearBall();
+        if (nearBall)
+        {
+            Rigidbody ballRb = ball.GetComponent<Rigidbody>();
+            if (ballRb != null)
+            {
+                BumpBall(ballRb);
+            }
+            else
+            {
+                Debug.LogWarning("Ball has no Rigidbody component!");
+            }
+        }
+    }
+
+    private bool IsPlayerNearBall()
+    {
+        if (ball == null) return false;
+        
+        float distance = Vector3.Distance(playerTransform.position, ball.transform.position);
+        return distance <= interactionRadius;
+    }
+    
+    void Update()
+    {
+        CheckState();
+    }
+
     private void CheckState()
     {
-        // If the player can legally hit the ball
+        // If your team is setting up for an attack OR the other team has just spiked
         if (CanHit())
         {
-            // Check the state of the game
             switch (gameManager.gameState)
             {
-                // Ball was spiked or served
                 case GameManager.GameState.Spiked: case GameManager.GameState.Served:
-                    // If the player is near the ball and they press the bump button, bump the ball
-                    if (IsPlayerNearBall() && InputSystem.actions.FindAction("Bump").WasPerformedThisFrame())
+                    if (bumpAction != null && bumpAction.IsPressed())
                     {
-                        BumpBall();
+                        OnInteractFallback();
                     }
                     break;
-                // Ball was bumped
                 case GameManager.GameState.Bumped:
-                    // If the player is near the ball and they press the set button, set the ball
-                    if (IsPlayerNearBall() && InputSystem.actions.FindAction("Set").WasPerformedThisFrame())
+                    if (setAction != null && setAction.IsPressed())
                     {
                         SetBall();
                     }
                     break;
-                // Ball was set
                 case GameManager.GameState.Set:
-                    // If the player is near the ball and they press the spike button, spike the ball
-                    if (IsPlayerNearBall() && InputSystem.actions.FindAction("Spike").WasPerformedThisFrame())
+                    if (spikeAction != null && spikeAction.IsPressed())
                     {
                         SpikeBall();
                     }
                     break;
-                // If the point is about to start (ball needs to be served)
                 case GameManager.GameState.PointStart:
+                    // Christofort: checks if the player is the server then stops them from moving
+                    if (gameManager.server == gameObject)
+                    {
+                        serverMovement.controlMovement(false,true);
+                    }
                     // If this player is the one serving and they press the serve button, serve the ball
-                    if (gameManager.server == gameObject && InputSystem.actions.FindAction("Serve").WasPerformedThisFrame())
+                    if (gameManager.server == gameObject && InputSystem.actions.FindAction("Serve").triggered)
                     {
                         ServeBall();
                     }
@@ -106,16 +188,15 @@ public class BallInteract : MonoBehaviour
         }
     }
 
-    // Checks to see if they player can legally hit the ball
     private bool CanHit()
     {
-        // If this player just hit the ball, they cannot hit it again
+        // If this AI just hit the ball, they cannot hit it again
         if (gameObject.Equals(gameManager.lastHit)) return false;
 
         // If the ball has been served by the other team, they can hit
         if (!gameManager.leftAttack.Equals(onLeft) && gameManager.gameState.Equals(GameManager.GameState.Served)) return true;
 
-        // If it's the player's turn to serve, they can hit
+        // If it's the AI's turn to serve, they can hit
         if (gameManager.leftAttack.Equals(onLeft) && gameManager.gameState.Equals(GameManager.GameState.PointStart)
             && gameManager.server == gameObject) return true;
 
@@ -128,23 +209,39 @@ public class BallInteract : MonoBehaviour
         // If the ball is on the other side of the court and has been spiked, they can hit, else they cannot
         return !gameManager.leftAttack.Equals(onLeft) && gameManager.gameState.Equals(GameManager.GameState.Spiked);
     }
-
-    // Checks if the player is near the ball
-    private bool IsPlayerNearBall()
+    
+    private void OnInteractFallback()
     {
-        // Get the distance the player is from the ball, then return whether that distance is within the interaction radius
-        float distance = Vector3.Distance(transform.position, ball.transform.position);
-        return distance <= interactionRadius;
+        Debug.Log("Fallback interact triggered!");
+        
+        if (ball == null)
+        {
+            Debug.LogWarning("Ball is null!");
+            return;
+        }
+        
+        bool nearBall = IsPlayerNearBall();
+        // Debug.Log($"Player near ball: {nearBall}, Distance: {Vector3.Distance(playerTransform.position, ball.transform.position)}");
+        
+        if (nearBall)
+        {
+            Rigidbody ballRb = ball.GetComponent<Rigidbody>();
+            if (ballRb != null)
+            {
+                BumpBall(ballRb);
+            }
+            else
+            {
+                Debug.LogWarning("Ball has no Rigidbody component!");
+            }
+        }
     }
 
-    // Bump the ball
-    private void BumpBall()
+    private void BumpBall(Rigidbody ballRb)
     {
-        // Set bump to location to front of the right court
+        // Set bump to location to front middle of whatever side of the court is bumping
         bumpToLocation = new Vector3(2f, 0f, 0f);
-
-        // If on left court, set to front of left court
-        if (onLeft)
+        if (ballRb.transform.position.x < 0)
         {
             bumpToLocation *= -1;
         }
@@ -159,104 +256,157 @@ public class BallInteract : MonoBehaviour
         gameManager.leftAttack = onLeft;
     }
 
-    // Set the ball
-    private void SetBall()
-    {
-        // Set the setting location to middle of court as default
-        setToLocation = bumpToLocation;
-
-        // Get the direction value
-        Vector2 dir = InputSystem.actions.FindAction("Direction").ReadValue<Vector2>();
-
-        // If player wants to set towards top or bottom, update set to location
-        if (dir.y < -0.64f)
-        {
-            setToLocation -= new Vector3(0, 0, 4); // Upper side of the court
-        }
-        else if (dir.y > 0.64f)
-        {
-            setToLocation += new Vector3(0, 0, 4); // Lower side of the court
-        }
-
-        // Set the ball's initial velocity and destination
-        SetBallInitVelocity(ballRb, setToLocation, 5.0f);
-        ballManager.goingTo = setToLocation;
-
-        // Update game manager fields
-        gameManager.gameState = GameManager.GameState.Set;
-        gameManager.lastHit = gameObject;
-    }
-
-    // Spike the ball
     private void SpikeBall()
     {
-        // Set the spiking location to middle-back of court on the rightside as default
-        spikeToLocation = new Vector3(8, 0, 0);
-
-        // If rightside is spiking, switch to spike towards leftside
-        if (!onLeft)
+        if (ball == null)
         {
-            spikeToLocation *= -1;
+            Debug.LogWarning("Ball is null!");
+            return;
         }
-
-        // Get the direction value
-        Vector2 dir = InputSystem.actions.FindAction("Direction").ReadValue<Vector2>();
-
-        // If player wants to spike towards top or bottom, update set to location
-        if (dir.y < -0.64f)
+        
+        bool nearBall = IsPlayerNearBall();
+        
+        if (nearBall)
         {
-            spikeToLocation.z -= 4;
-        }
-        else if (dir.y > 0.64f)
-        {
-            spikeToLocation.z += 4;
-        }
+            Rigidbody ballRb = ball.GetComponent<Rigidbody>();
+            if (ballRb != null)
+            {
+                // Set the spiking location to middle-back of court on the rightside as default
+                spikeToLocation = new Vector3(8, 0, 0);
 
-        // Set the ball's initial velocity and destination
-        SetBallInitVelocity(ballRb, spikeToLocation, -1.0f);
-        ballManager.goingTo = spikeToLocation;
+                // If rightside is spiking, switch to spike towards leftside
+                if (ballRb.transform.position.x > 0)
+                {
+                    spikeToLocation *= -1;
+                }
 
-        // Update game manager fields
-        gameManager.gameState = GameManager.GameState.Spiked;
-        gameManager.lastHit = gameObject;
+                // Get the direction value
+                Vector2 dir = directionAction.ReadValue<Vector2>();
+
+                // If player wants to spike towards top or bottom, update set to location
+                if (dir.y < -0.64f)
+                {
+                    spikeToLocation.z -= 4;
+                }
+                else if (dir.y > 0.64f)
+                {
+                    spikeToLocation.z += 4;
+                }
+
+                // Set the ball's initial velocity and destination
+                SetBallInitVelocity(ballRb, spikeToLocation, -1.0f);
+                ballManager.goingTo = spikeToLocation;
+
+                // Update game manager fields
+                gameManager.gameState = GameManager.GameState.Spiked;
+                gameManager.lastHit = gameObject;
+            }
+            else
+            {
+                Debug.LogWarning("Ball has no Rigidbody component!");
+            }
+        } 
     }
 
-    // Serve the ball
+    private void SetBall()
+    {
+        if (ball == null)
+        {
+            Debug.LogWarning("Ball is null!");
+            return;
+        }
+        
+        bool nearBall = IsPlayerNearBall();
+        
+        if (nearBall)
+        {
+            Rigidbody ballRb = ball.GetComponent<Rigidbody>();
+            if (ballRb != null)
+            {
+                // Set the setting location to middle of court as default
+                setToLocation = bumpToLocation;
+
+                // Get the direction value
+                Vector2 dir = directionAction.ReadValue<Vector2>();
+
+                // If player wants to set towards top or bottom, update set to location
+                if (dir.y < -0.64f)
+                {
+                    setToLocation -= new Vector3(0, 0, 4);
+                }
+                else if (dir.y > 0.64f)
+                {
+                    setToLocation += new Vector3(0, 0, 4);
+                }
+
+                // Set the ball's initial velocity and destination
+                SetBallInitVelocity(ballRb, setToLocation, 5.0f);
+                ballManager.goingTo = setToLocation;
+
+                // Update game manager fields
+                gameManager.gameState = GameManager.GameState.Set;
+                gameManager.lastHit = gameObject;
+            }
+            else
+            {
+                Debug.LogWarning("Ball has no Rigidbody component!");
+            }
+        }
+    }
+
     private void ServeBall()
     {
-        // Set the serving location to middle-back of court on the rightside as default
-        serveToLocation = new Vector3(8, 0, 0);
-
-        // If rightside is spiking, switch to serve towards leftside
-        if (!onLeft)
+        if (ball == null)
         {
-            serveToLocation *= -1;
+            Debug.LogWarning("Ball is null!");
+            return;
         }
-
-        // Get the direction value
-        Vector2 dir = InputSystem.actions.FindAction("Direction").ReadValue<Vector2>();
-
-        // If player wants to set towards top or bottom, update set to location
-        if (dir.y < -0.64f)
+        
+        bool nearBall = IsPlayerNearBall();
+        if (nearBall)
         {
-            serveToLocation -= new Vector3(0, 0, 4);
-        }
-        else if (dir.y > 0.64f)
-        {
-            serveToLocation += new Vector3(0, 0, 4);
-        }
+            Rigidbody ballRb = ball.GetComponent<Rigidbody>();
+            if (ballRb != null)
+            {
+                // Set the serving location to middle-back of court on the rightside as default
+                serveToLocation = new Vector3(8, 0, 0);
 
-        // Set the ball's initial velocity and destination
-        SetBallInitVelocity(ballRb, serveToLocation, 6.0f);
-        ballManager.goingTo = serveToLocation;
+                // If rightside is spiking, switch to serve towards leftside
+                if (!onLeft)
+                {
+                    serveToLocation *= -1;
+                }
 
-        // Update game manager fields
-        gameManager.gameState = GameManager.GameState.Served;
-        gameManager.lastHit = gameObject;
-        gameManager.leftAttack = onLeft;
+                // Get the direction value
+                Vector2 dir = directionAction.ReadValue<Vector2>();
+
+                // If player wants to set towards top or bottom, update set to location
+                if (dir.y < -0.64f)
+                {
+                    serveToLocation -= new Vector3(0, 0, 4);
+                }
+                else if (dir.y > 0.64f)
+                {
+                    serveToLocation += new Vector3(0, 0, 4);
+                }
+
+                // Set the ball's initial velocity and destination
+                SetBallInitVelocity(ballRb, serveToLocation, 6.0f);
+                ballManager.goingTo = serveToLocation;
+
+                // Update game manager fields
+                gameManager.gameState = GameManager.GameState.Served;
+                gameManager.lastHit = gameObject;
+                gameManager.leftAttack = onLeft;
+                serverMovement.controlMovement(true,true); // christofort: let the server move after gameState updates
+            }
+            else
+            {
+                Debug.LogWarning("Ball has no Rigidbody component!");
+            }
+        }
     }
 
-    // Set the velocity of the ball after interacting with it
     private void SetBallInitVelocity(Rigidbody ballRb, Vector3 endLocation, float maxHeight)
     {
         // Bumping, setting, or serving
