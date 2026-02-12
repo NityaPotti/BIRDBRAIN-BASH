@@ -21,12 +21,14 @@ public class ToucanDefensive : MonoBehaviour
 
     public void TouCanDoIt()
     {
+        // Only runs if not on cooldown
         if (!onCooldown)
         {
             Debug.Log("Tou-Can Do It!!! :D");
 
             GameObject teammate = null;
 
+            // Finds the teammate to buff
             if (_onLeft)
             {
                 GameObject leftPlayer1 = gameManager.leftPlayer1;
@@ -51,6 +53,7 @@ public class ToucanDefensive : MonoBehaviour
                 }
             }
 
+            // Applies buff
             teammate.GetComponent<CharacterMovement>().BuffStats(buffAmount, buffLength);
             
             StartCoroutine(Cooldown());
@@ -60,6 +63,7 @@ public class ToucanDefensive : MonoBehaviour
         }
     }
 
+    // Cools down cooldown seconds
     public IEnumerator Cooldown()
     {
         onCooldown = true;
