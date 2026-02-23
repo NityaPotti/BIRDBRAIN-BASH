@@ -10,6 +10,10 @@ public class CharacterMovement : MonoBehaviour
     public float jumpForce = 1.0f; // Force the character uses to jump 
     public float rotationSpeed = 10.0f; // How fast the character rotates to face movement direction
     private float directionChangeWeight = 15f; // How quickly the character can change direction
+    private Coroutine buffCoroutine; // Reference to the currently active buff coroutine
+    private float originalMaxGroundSpeed = 1.0f; // Original max ground speed before buff
+    private float originalMaxAirSpeed = 1.0f; // Original max air speed before buff
+    private float originalJumpForce = 1.0f; // Original jump force before buff
     private Rigidbody rb; // Rigid body of the character
     // christofort: changed grounded to public to allow PenguinScript to access it
     public bool grounded = false; // If the character is touching the ground
@@ -17,6 +21,7 @@ public class CharacterMovement : MonoBehaviour
     private bool canJump = false; // christofort: defaulted to false, ability scripts must set this to true
     private bool canMove = false; // christofort: defaulted to false, ability scripts must set this to true
     private PenguinScript penguinScript; // Reference to penguin dash script
+    private ParticleSystem dustParticles; // Reference to particle system for ground dust
     
     [HideInInspector] public bool overrideRotation = false; // Allow other scripts to override rotation
     [HideInInspector] public Quaternion targetRotation; // Target rotation when overridden
@@ -27,6 +32,7 @@ public class CharacterMovement : MonoBehaviour
         // Get the Rigidbody of the character
         rb = GetComponent<Rigidbody>();
         penguinScript = GetComponent<PenguinScript>();
+        dustParticles = GetComponent<ParticleSystem>();
     }
 
     // Update is called once per frame
@@ -93,6 +99,11 @@ public class CharacterMovement : MonoBehaviour
         if (other.gameObject.layer == 6)
         {
             grounded = true;
+            // Resume particle emission when landing
+            if (dustParticles != null)
+            {
+                dustParticles.Play();
+            }
         }
     }
 
@@ -103,6 +114,11 @@ public class CharacterMovement : MonoBehaviour
         if (other.gameObject.layer == 6)
         {
             grounded = false;
+            // Stop particle emission when airborne
+            if (dustParticles != null)
+            {
+                dustParticles.Stop();
+            }
         }
     }
     // christofort: encapsulated variables to control player movement from other scripts
@@ -114,7 +130,19 @@ public class CharacterMovement : MonoBehaviour
 
     public void BuffStats(int increase, int time)
     {
-        StartCoroutine(BuffTimer(increase, time));
+        buffCoroutine = StartCoroutine(BuffTimer(increase, time));
+    }
+
+    public void CancelBuffs()
+    {
+        if (buffCoroutine != null)
+        {
+            StopCoroutine(buffCoroutine);
+            buffCoroutine = null;
+        }
+        maxGroundSpeed = originalMaxGroundSpeed;
+        maxAirSpeed = originalMaxAirSpeed;
+        jumpForce = originalJumpForce;
     }
 
     public IEnumerator BuffTimer(int increase, int time)
@@ -122,9 +150,9 @@ public class CharacterMovement : MonoBehaviour
         Debug.Log("BUFFING...");
         Debug.Log("ORIGINAL = " + maxGroundSpeed);
         
-        float originalMaxGroundSpeed = maxGroundSpeed;
-        float originalMaxAirSpeed = maxAirSpeed;
-        float originalJumpForce = jumpForce;
+        originalMaxGroundSpeed = maxGroundSpeed;
+        originalMaxAirSpeed = maxAirSpeed;
+        originalJumpForce = jumpForce;
 
         maxGroundSpeed += increase;
         maxAirSpeed += increase;

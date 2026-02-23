@@ -12,6 +12,7 @@ public class BallInteract : MonoBehaviour
     public BallManager ballManager; // Manager of the ball
     public float interactionRadius = 5f; // How far the ball can be from the player to interact with it
     
+    [SerializeField] private BirdType birdType; // The type of bird the character is
     private GameObject ball; // Game object for the ball
     private Rigidbody ballRb; // Rigid body for the ball
     private Vector3 bumpToLocation; // Where the ball will go after bumping
@@ -23,6 +24,7 @@ public class BallInteract : MonoBehaviour
     [Header("Spike Stat")]
     public float spikeStat; //Spiking power for the bird
 
+    private Vector3 blockToLocation; // Where the ball will go after blocking
     private CharacterMovement serverMovement; //Christofort: Track the server's movement from character movement script
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
@@ -59,7 +61,12 @@ public class BallInteract : MonoBehaviour
         float distance = Vector3.Distance(transform.position, ball.transform.position);
         return distance <= interactionRadius;
     }
-    
+
+    private bool IsPlayerNearNet() 
+    {
+        return Mathf.Abs(ball.transform.position.x) < 1.5f;
+    }
+
     // Update is called once per frame
     void Update()
     {
@@ -76,7 +83,22 @@ public class BallInteract : MonoBehaviour
             switch (gameManager.gameState)
             {
                 // Ball has just been spiked or served
-                case GameManager.GameState.Spiked: case GameManager.GameState.Served:
+                case GameManager.GameState.Spiked:
+                    // EJ: Since ball can't be blocked on the serve this check can't be related to "Served"
+                    // EJ: Moved "Served" to a check by itself and check to bump twice                
+                    if (IsPlayerNearBall() && IsPlayerNearNet() && InputSystem.actions.FindAction("Block").WasPressedThisFrame())
+                    {
+                        BlockBall();
+                    }
+                    
+                    // If the player is close enough to the ball and is pressing the bump button, bump the ball
+                    else if (IsPlayerNearBall() && InputSystem.actions.FindAction("Bump").WasPressedThisFrame())
+                    {
+                        BumpBall();
+                    }
+                    break;
+
+                case GameManager.GameState.Served: case GameManager.GameState.Blocked:
                     // If the player is close enough to the ball and is pressing the bump button, bump the ball
                     if (IsPlayerNearBall() && InputSystem.actions.FindAction("Bump").WasPressedThisFrame())
                     {
@@ -153,6 +175,9 @@ public class BallInteract : MonoBehaviour
         SetBallInitVelocity(ballRb, bumpToLocation, 5.0f);
         ballManager.goingTo = bumpToLocation;
 
+        // Play bump sound
+        AudioManager.PlayBirdSound(birdType, SoundType.BUMP, 1.0f);
+
         // Update game manager fields
         gameManager.gameState = GameManager.GameState.Bumped;
         gameManager.lastHit = gameObject;
@@ -181,6 +206,9 @@ public class BallInteract : MonoBehaviour
         // Set the ball's initial velocity and destination
         SetBallInitVelocity(ballRb, setToLocation, 5.0f);
         ballManager.goingTo = setToLocation;
+
+        // Play set sound
+        AudioManager.PlayBirdSound(birdType, SoundType.SET, 1.0f);
 
         // Update game manager fields
         gameManager.gameState = GameManager.GameState.Set;
@@ -215,6 +243,9 @@ public class BallInteract : MonoBehaviour
         // Set the ball's initial velocity and destination
         SetBallInitVelocity(ballRb, spikeToLocation, -1.0f);
         ballManager.goingTo = spikeToLocation;
+
+        // Play spike sound
+        AudioManager.PlayBirdSound(birdType, SoundType.SPIKE, 1.0f);
 
         // Update game manager fields
         gameManager.gameState = GameManager.GameState.Spiked;
@@ -254,6 +285,29 @@ public class BallInteract : MonoBehaviour
         gameManager.lastHit = gameObject;
         gameManager.leftAttack = onLeft;
         serverMovement.controlMovement(true,true); // christofort: let the server move after gameState updates
+    }
+
+    private void BlockBall()
+    {
+        // sends ball back to attacker's side near the net
+        blockToLocation = new Vector3(6f, 0f, 0f);
+
+        if (!onLeft) blockToLocation *= -1;
+
+        // directional control
+        Vector2 dir = InputSystem.actions.FindAction("Direction").ReadValue<Vector2>();
+
+        if (dir.y < -0.64f) blockToLocation.z -= 3f;
+        else if (dir.y > 0.64f) blockToLocation.z += 3f;
+
+        // want fast and flat arc
+        SetBallInitVelocity(ballRb, blockToLocation, -1.0f);
+        ballManager.goingTo = blockToLocation;
+
+        // Update game state
+        gameManager.gameState = GameManager.GameState.Blocked;
+        gameManager.lastHit = gameObject;
+        gameManager.leftAttack = onLeft;
     }
 
     // Setting the ball's velocity when interacting with it
